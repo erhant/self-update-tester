@@ -1,0 +1,10 @@
+[package]
+name = "self-update-tester"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eyre = "0.6.12"
+inquire = "0.7.5"
+rand = "0.9.0"
+self_update = "0.42.0"
