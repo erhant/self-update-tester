@@ -1,8 +1,18 @@
-use inquire::Select;
+use std::path::Path;
+
+use clap::{Parser, Subcommand};
+use self_update::self_replace;
 use self_update::{backends::github, update::Release};
 
 /// Type-struct to implement `Display` for `Release` for the selector.
+#[derive(Debug, Clone)]
 struct MyRelease(Release);
+
+impl From<MyRelease> for Release {
+    fn from(mr: MyRelease) -> Self {
+        mr.0
+    }
+}
 
 impl std::fmt::Display for MyRelease {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -10,32 +20,77 @@ impl std::fmt::Display for MyRelease {
     }
 }
 
+#[derive(Parser)]
+#[command(version, about)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// View releases
+    Releases,
+    /// Self-replace with the latest release
+    Replace,
+    /// Show the latest release
+    Latest,
+}
+
 pub fn main() -> eyre::Result<()> {
-    // https://github.com/jaemk/self_update/issues/44
+    let cli = Cli::parse();
+    match cli.command {
+        Commands::Releases => releases()?,
+        Commands::Latest => latest()?,
+        Commands::Replace => replace()?,
+    }
+    Ok(())
+}
 
-    let mut rel_builder = github::ReleaseList::configure();
-
-    let releases = rel_builder
+pub fn latest() -> eyre::Result<()> {
+    let release = github::Update::configure()
         .repo_owner("erhant")
         .repo_name("self-update-tester")
-        .build()
-        .unwrap() // TODO:!!!
-        .fetch()
-        .unwrap() // TODO:!!!
+        .bin_name("self-update-tester-macOS-amd64")
+        .current_version(Default::default()) // this is not used within `get_latest_release`
+        .build()?
+        .get_latest_release()?;
+
+    println!("{}", MyRelease(release));
+
+    Ok(())
+}
+
+pub fn releases() -> eyre::Result<()> {
+    let releases = github::ReleaseList::configure()
+        .repo_owner("erhant")
+        .repo_name("self-update-tester")
+        .build()?
+        .fetch()?
         .into_iter()
-        .map(|r| MyRelease(r))
+        .map(MyRelease)
         .collect::<Vec<_>>();
 
-    // .iter().filter(|r| r.version.starts_with);
+    // println!("{}", MyRelease(release));
 
-    let Some(chosen_release) = Select::new("Select a version:", releases)
-        .with_help_message("↑↓ to move, enter to select, type to filter, ESC to go back")
-        .prompt_skippable()?
-    else {
-        return Ok(());
-    };
+    for release in &releases {
+        println!("{:#?}", release);
+    }
 
-    println!("Chosen version: {}", chosen_release);
+    Ok(())
+}
+
+pub fn replace() -> eyre::Result<()> {
+    println!("Replacing myself after 2 seconds...");
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    let new_exe = Path::new("./bin/self-update-tester-macOS-arm64_0-1-1");
+    assert!(new_exe.exists(), "path must exist");
+
+    self_replace::self_replace(new_exe)?;
+    if std::env::var("FORCE_EXIT").ok().as_deref() == Some("1") {
+        std::process::exit(0);
+    }
 
     Ok(())
 }
